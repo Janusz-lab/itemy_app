@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,15 +11,18 @@ import 'features/inventory/data/item_repository.dart';
 import 'features/inventory/models/item_model.dart';
 import 'features/inventory/presentation/item_card.dart';
 
-// Provider do lokalnej pamięci (SharedPreferences)
 final sharedPrefsProvider = Provider<SharedPreferences>((ref) => throw UnimplementedError());
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final prefs = await SharedPreferences.getInstance();
   
-  // Inicjalizacja Firebase
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  try {
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  } catch (e) {
+    debugPrint("Firebase init error: $e");
+  }
+
+  final prefs = await SharedPreferences.getInstance();
 
   runApp(ProviderScope(
     overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
@@ -45,7 +47,7 @@ class IteMYApp extends ConsumerWidget {
       home: authState.when(
         data: (user) => user == null ? const LoadingScreen() : const HomeScreen(),
         loading: () => const LoadingScreen(),
-        error: (e, s) => Scaffold(body: Center(child: Text('Błąd: $e'))),
+        error: (e, s) => Scaffold(body: Center(child: Text('Błąd Auth: $e'))),
       ),
     );
   }
@@ -61,8 +63,9 @@ class _LoadingScreenState extends ConsumerState<LoadingScreen> {
   @override
   void initState() {
     super.initState();
-    // Automatyczne logowanie anonimowe przy starcie
-    Future.microtask(() => ref.read(authControllerProvider).initializeAuth());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(authControllerProvider).initializeAuth();
+    });
   }
   @override
   Widget build(BuildContext context) => const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -71,41 +74,121 @@ class _LoadingScreenState extends ConsumerState<LoadingScreen> {
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
-  void _showManualEanEntry(BuildContext context, WidgetRef ref, String storageId) {
-    final controller = TextEditingController();
+  void _showAddProductSheet(BuildContext context, WidgetRef ref, String storageId, {String? ean}) {
+    final nameController = TextEditingController();
+    final eanController = TextEditingController(text: ean);
+    final descController = TextEditingController();
+    final urlController = TextEditingController();
+    final qtyController = TextEditingController(text: '1');
+    String selectedUnit = 'szt';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          child: DraggableScrollableSheet(
+            initialChildSize: 0.8,
+            maxChildSize: 0.95,
+            expand: false,
+            builder: (context, scrollController) => SingleChildScrollView(
+              controller: scrollController,
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  Text(ean != null ? 'Nowy produkt (EAN: $ean)' : 'Dodaj produkt', 
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 20),
+                  TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Nazwa produktu *', border: OutlineInputBorder()), autofocus: true),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: TextField(controller: qtyController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Ilość', border: OutlineInputBorder())),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          value: selectedUnit,
+                          decoration: const InputDecoration(labelText: 'Jedn.', border: OutlineInputBorder()),
+                          items: ['szt', 'kpl', 'g', 'kg', 'm', 'cm', 'm2', 'm3'].map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
+                          onChanged: (v) => setState(() => selectedUnit = v!),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(controller: eanController, decoration: const InputDecoration(labelText: 'Kod EAN', border: OutlineInputBorder())),
+                  const SizedBox(height: 12),
+                  TextField(controller: urlController, decoration: const InputDecoration(labelText: 'Link do zdjęcia', border: OutlineInputBorder())),
+                  const SizedBox(height: 12),
+                  TextField(controller: descController, maxLines: 2, decoration: const InputDecoration(labelText: 'Opis', border: OutlineInputBorder())),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        if (nameController.text.isNotEmpty) {
+                          final newItem = ItemModel(
+                            id: '', 
+                            name: nameController.text, 
+                            ean: eanController.text.isEmpty ? null : eanController.text,
+                            quantity: double.tryParse(qtyController.text) ?? 1.0,
+                            unit: selectedUnit,
+                            description: descController.text,
+                            imageUrl: urlController.text,
+                            updatedAt: DateTime.now()
+                          );
+                          ref.read(itemRepositoryProvider).upsertItem(storageId, newItem);
+                          Navigator.pop(context);
+                        }
+                      },
+                      child: const Text('Zapisz produkt'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showScanDialog(BuildContext context, WidgetRef ref, String storageId) {
+    final eanController = TextEditingController();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Wpisz kod EAN'),
+        title: const Text('Skanowanie kodu EAN'),
         content: TextField(
-          controller: controller,
+          controller: eanController,
           keyboardType: TextInputType.number,
           autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'Np. 5901234567890',
-            border: OutlineInputBorder(),
-          ),
+          decoration: const InputDecoration(hintText: 'Wpisz lub wklej kod'),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Anuluj'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Anuluj')),
           ElevatedButton(
             onPressed: () {
-              if (controller.text.isNotEmpty) {
-                final newItem = ItemModel(
-                  id: '', 
-                  name: 'Produkt ${controller.text.substring(controller.text.length - 4)}', 
-                  ean: controller.text,
-                  quantity: 1, 
-                  updatedAt: DateTime.now()
-                );
-                ref.read(itemRepositoryProvider).upsertItem(storageId, newItem);
+              final ean = eanController.text.trim();
+              if (ean.isNotEmpty) {
                 Navigator.pop(context);
+                final items = ref.read(currentItemsProvider).value ?? [];
+                final existing = items.where((i) => i.ean == ean).toList();
+
+                if (existing.isNotEmpty) {
+                  ref.read(itemRepositoryProvider).updateQuantity(storageId, existing.first.id, 1);
+                } else {
+                  _showAddProductSheet(context, ref, storageId, ean: ean);
+                }
               }
             },
-            child: const Text('Dodaj'),
+            child: const Text('OK'),
           ),
         ],
       ),
@@ -116,28 +199,56 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final storage = ref.watch(currentStorageProvider);
     final user = ref.watch(authStateProvider).value;
+    final sortConfig = ref.watch(itemSortProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(storage?.name ?? 'iteMY'),
+        title: storage == null ? const Text('iteMY') : TextField(
+          decoration: const InputDecoration(
+            hintText: 'Szukaj produktów...',
+            border: InputBorder.none,
+          ),
+          onChanged: (val) => ref.read(itemSearchQueryProvider.notifier).state = val,
+        ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
-          if (user != null)
-            IconButton(
-              icon: const Icon(Icons.person_outline),
-              onPressed: () {},
-            ),
+          PopupMenuButton<SortOption>(
+            icon: const Icon(Icons.sort),
+            onSelected: (opt) => ref.read(itemSortProvider.notifier).state = sortConfig.copyWith(option: opt),
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: SortOption.name, child: Text('Sortuj po nazwie')),
+              const PopupMenuItem(value: SortOption.ean, child: Text('Sortuj po EAN')),
+              const PopupMenuItem(value: SortOption.date, child: Text('Sortuj po dacie')),
+              const PopupMenuItem(value: SortOption.quantity, child: Text('Sortuj po ilości')),
+            ],
+          ),
+          IconButton(
+            icon: Icon(sortConfig.ascending ? Icons.arrow_upward : Icons.arrow_downward),
+            onPressed: () => ref.read(itemSortProvider.notifier).state = sortConfig.copyWith(ascending: !sortConfig.ascending),
+          ),
         ],
       ),
       body: storage == null 
         ? Center(child: ElevatedButton(
             onPressed: () => ref.read(storageRepositoryProvider).createStorage('Mój Magazyn', user!.uid),
-            child: const Text('Stwórz magazyn')))
+            child: const Text('Inicjalizuj Magazyn')))
         : const ItemListWidget(),
-      floatingActionButton: storage == null ? null : FloatingActionButton.extended(
-        onPressed: () => _showManualEanEntry(context, ref, storage.id),
-        label: const Text('Skanuj (Manual)'),
-        icon: const Icon(Icons.qr_code_scanner),
+      floatingActionButton: storage == null ? null : Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FloatingActionButton(
+            onPressed: () => _showAddProductSheet(context, ref, storage.id),
+            heroTag: 'manual_add',
+            child: const Icon(Icons.add),
+          ),
+          const SizedBox(width: 12),
+          FloatingActionButton.extended(
+            onPressed: () => _showScanDialog(context, ref, storage.id),
+            heroTag: 'ean_scan',
+            label: const Text('Skanuj EAN'),
+            icon: const Icon(Icons.qr_code_scanner),
+          ),
+        ],
       ),
     );
   }
@@ -147,18 +258,17 @@ class ItemListWidget extends ConsumerWidget {
   const ItemListWidget({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final itemsAsync = ref.watch(currentItemsProvider);
-    
+    final itemsAsync = ref.watch(filteredItemsProvider);
     return itemsAsync.when(
       data: (items) => items.isEmpty 
-          ? const Center(child: Text('Brak produktów w tym magazynie.'))
-          : ListView.builder(
-              padding: const EdgeInsets.only(top: 8, bottom: 80),
-              itemCount: items.length,
-              itemBuilder: (context, index) => ItemCard(item: items[index]),
-            ),
+        ? const Center(child: Text('Brak wyników.'))
+        : ListView.builder(
+            padding: const EdgeInsets.only(bottom: 100, top: 8),
+            itemCount: items.length,
+            itemBuilder: (context, index) => ItemCard(item: items[index]),
+          ),
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, s) => Center(child: Text('Błąd bazy: $e')),
+      error: (e, s) => Center(child: Text('Błąd: $e')),
     );
   }
 }
