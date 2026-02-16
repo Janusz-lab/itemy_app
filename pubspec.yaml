@@ -1,0 +1,36 @@
+name: itemy_inventory
+description: Błyskawiczny skaner domowego magazynu.
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  
+  # Firebase
+  firebase_core: ^3.15.2
+  firebase_auth: ^5.7.0
+  cloud_firestore: ^5.6.12
+  
+  # State Management
+  flutter_riverpod: ^2.6.1
+  
+  # Hardware & UX
+  mobile_scanner: ^6.0.11
+  vibration: ^2.0.1
+  wakelock_plus: ^1.2.1
+  shared_preferences: ^2.3.3
+  http: ^1.6.0
+  intl: ^0.19.0
+  uuid: ^4.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
