@@ -10,8 +10,10 @@ class StorageRepository {
   StorageRepository(this._db);
 
   Stream<List<StorageModel>> watchUserStorages(String uid) {
-    return _db.collection('storages').where('access_uids', arrayContains: uid)
-        .snapshots().map((s) => s.docs.map((d) => StorageModel.fromFirestore(d)).toList());
+    return _db.collection('storages')
+        .where('access_uids', arrayContains: uid)
+        .snapshots()
+        .map((s) => s.docs.map((d) => StorageModel.fromFirestore(d)).toList());
   }
 
   Future<void> createStorage(String name, String uid) async {
@@ -20,5 +22,14 @@ class StorageRepository {
       'access_uids': [uid],
       'created_at': FieldValue.serverTimestamp(),
     });
+  }
+
+  Future<void> renameStorage(String id, String newName) async {
+    await _db.collection('storages').doc(id).update({'name': newName});
+  }
+
+  Future<void> deleteStorage(String id) async {
+    // Uwaga: W produkcji należałoby też usunąć podkolekcję 'items'
+    await _db.collection('storages').doc(id).delete();
   }
 }
