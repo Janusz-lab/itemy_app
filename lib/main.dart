@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'core/providers/app_providers.dart';            // ← sharedPrefsProvider stąd
 import 'features/auth/providers/auth_provider.dart';
 import 'features/inventory/providers/storage_providers.dart';
 import 'features/inventory/providers/item_providers.dart';
 import 'features/inventory/data/storage_repository.dart';
 import 'features/inventory/data/item_repository.dart';
 import 'features/inventory/models/item_model.dart';
-import 'features/inventory/models/storage_model.dart'; // NAPRAWIONO: Dodano brakujący import
+import 'features/inventory/models/storage_model.dart';
 import 'features/inventory/presentation/item_card.dart';
 
 class DefaultFirebaseOptions {
@@ -22,12 +23,13 @@ class DefaultFirebaseOptions {
   );
 }
 
-final sharedPrefsProvider = Provider<SharedPreferences>((ref) => throw UnimplementedError());
+// USUNIĘTO: sharedPrefsProvider był tu zduplikowany.
+// Teraz pochodzi wyłącznie z lib/core/providers/app_providers.dart
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform); 
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   } catch (e) {
     debugPrint("Firebase init error: $e");
   }
@@ -47,7 +49,7 @@ class IteMYApp extends ConsumerWidget {
       title: 'iteMY',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        useMaterial3: true, 
+        useMaterial3: true,
         colorSchemeSeed: Colors.blue,
         brightness: Brightness.light,
       ),
@@ -74,8 +76,10 @@ class _LoadingScreenState extends ConsumerState<LoadingScreen> {
       ref.read(authControllerProvider).initializeAuth();
     });
   }
+
   @override
-  Widget build(BuildContext context) => const Scaffold(body: Center(child: CircularProgressIndicator()));
+  Widget build(BuildContext context) =>
+      const Scaffold(body: Center(child: CircularProgressIndicator()));
 }
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -87,23 +91,54 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
 
-  void _showAddProductSheet(BuildContext context, WidgetRef ref, String storageId, {String? ean}) {
+  // ── Pomocnik: symulacja skanera ────────────────────────────────────────────
+  Future<String?> _simulateScan(BuildContext context) async {
+    String? result;
+    await showDialog(
+      context: context,
+      builder: (context) {
+        final controller = TextEditingController();
+        return AlertDialog(
+          title: const Text('Skaner'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(hintText: 'Zeskanowano...'),
+            keyboardType: TextInputType.number,
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Anuluj')),
+            ElevatedButton(
+              onPressed: () { result = controller.text; Navigator.pop(context); },
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+    return result;
+  }
+
+  // ── Modal dodawania — identyczny układ jak edycja ──────────────────────────
+  void _showAddProductSheet(BuildContext context, WidgetRef ref, String storageId,
+      {String? ean}) {
     final nameController = TextEditingController();
-    final eanController = TextEditingController(text: ean);
+    final eanController  = TextEditingController(text: ean);
     final descController = TextEditingController();
-    final urlController = TextEditingController();
-    final qtyController = TextEditingController(text: '1');
-    String selectedUnit = 'szt';
+    final urlController  = TextEditingController();
+    final qtyController  = TextEditingController(text: '1');
+    String selectedUnit  = 'szt';
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => Padding(
           padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
           child: DraggableScrollableSheet(
-            initialChildSize: 0.8,
+            initialChildSize: 0.85,
             maxChildSize: 0.95,
             expand: false,
             builder: (context, scrollController) => SingleChildScrollView(
@@ -111,30 +146,125 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
-                  Text(ean != null ? 'Nowy produkt (EAN: $ean)' : 'Dodaj produkt', 
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 20),
-                  TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Nazwa produktu *', border: OutlineInputBorder()), autofocus: true),
+                  // ── Podgląd obrazu ──────────────────────────────────────
+                  Container(
+                    height: 180,
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                        color: Colors.black12,
+                        borderRadius: BorderRadius.circular(12)),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: urlController.text.isNotEmpty
+                          ? Image.network(
+                              urlController.text,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, __, ___) =>
+                                  const Icon(Icons.broken_image, size: 50),
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return const Center(child: CircularProgressIndicator());
+                              },
+                            )
+                          : const Icon(Icons.image, size: 50, color: Colors.grey),
+                    ),
+                  ),
+
+                  Text(
+                    ean != null ? 'Nowy produkt (EAN: $ean)' : 'Dodaj produkt',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // ── Nazwa ───────────────────────────────────────────────
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                        labelText: 'Nazwa produktu *', border: OutlineInputBorder()),
+                    autofocus: true,
+                  ),
                   const SizedBox(height: 12),
+
+                  // ── Ilość + jednostka ───────────────────────────────────
                   Row(
                     children: [
-                      Expanded(flex: 2, child: TextField(controller: qtyController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Ilość', border: OutlineInputBorder()))),
+                      Expanded(
+                        flex: 2,
+                        child: TextField(
+                          controller: qtyController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                              labelText: 'Ilość', border: OutlineInputBorder()),
+                        ),
+                      ),
                       const SizedBox(width: 12),
-                      Expanded(child: DropdownButtonFormField<String>(
-                        value: selectedUnit,
-                        decoration: const InputDecoration(labelText: 'Jedn.', border: OutlineInputBorder()),
-                        items: ['szt', 'kpl', 'g', 'kg', 'm', 'cm', 'm2', 'm3'].map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
-                        onChanged: (v) => setState(() => selectedUnit = v!),
-                      )),
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          value: selectedUnit,
+                          decoration: const InputDecoration(
+                              labelText: 'Jedn.', border: OutlineInputBorder()),
+                          items: ['szt', 'kpl', 'g', 'kg', 'm', 'cm', 'm2', 'm3']
+                              .map((u) => DropdownMenuItem(value: u, child: Text(u)))
+                              .toList(),
+                          onChanged: (v) => setState(() => selectedUnit = v!),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 12),
-                  TextField(controller: eanController, decoration: const InputDecoration(labelText: 'Kod EAN', border: OutlineInputBorder())),
+
+                  // ── EAN + przycisk skanera (56 px) ──────────────────────
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: TextField(
+                          controller: eanController,
+                          decoration: const InputDecoration(
+                              labelText: 'Kod EAN', border: OutlineInputBorder()),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: SizedBox(
+                          height: 56,
+                          child: ElevatedButton(
+                            onPressed: () async {
+                              final scanned = await _simulateScan(context);
+                              if (scanned != null) {
+                                eanController.text = scanned;
+                                setState(() {});
+                              }
+                            },
+                            child: const Icon(Icons.qr_code_scanner),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 12),
-                  TextField(controller: urlController, decoration: const InputDecoration(labelText: 'Link do zdjęcia', border: OutlineInputBorder())),
+
+                  // ── Link do zdjęcia ─────────────────────────────────────
+                  TextField(
+                    controller: urlController,
+                    decoration: const InputDecoration(
+                        labelText: 'Link do zdjęcia', border: OutlineInputBorder()),
+                    onChanged: (v) => setState(() {}),
+                  ),
                   const SizedBox(height: 12),
-                  TextField(controller: descController, maxLines: 2, decoration: const InputDecoration(labelText: 'Opis', border: OutlineInputBorder())),
+
+                  // ── Opis ────────────────────────────────────────────────
+                  TextField(
+                    controller: descController,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                        labelText: 'Opis', border: OutlineInputBorder()),
+                  ),
                   const SizedBox(height: 20),
+
+                  // ── Zapis ───────────────────────────────────────────────
                   SizedBox(
                     width: double.infinity,
                     height: 50,
@@ -142,9 +272,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       onPressed: () {
                         if (nameController.text.isNotEmpty) {
                           final newItem = ItemModel(
-                            id: '', name: nameController.text, ean: eanController.text.isEmpty ? null : eanController.text,
-                            quantity: double.tryParse(qtyController.text) ?? 1.0, unit: selectedUnit,
-                            description: descController.text, imageUrl: urlController.text, updatedAt: DateTime.now()
+                            id: '',
+                            name: nameController.text,
+                            ean: eanController.text.isEmpty ? null : eanController.text,
+                            quantity: double.tryParse(qtyController.text) ?? 1.0,
+                            unit: selectedUnit,
+                            description: descController.text,
+                            imageUrl: urlController.text,
+                            updatedAt: DateTime.now(),
                           );
                           ref.read(itemRepositoryProvider).upsertItem(storageId, newItem);
                           Navigator.pop(context);
@@ -162,13 +297,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  // ── Dialog skanowania EAN z FAB ────────────────────────────────────────────
   void _showScanDialog(BuildContext context, WidgetRef ref, String storageId) {
     final eanController = TextEditingController();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Skanowanie kodu EAN'),
-        content: TextField(controller: eanController, keyboardType: TextInputType.number, autofocus: true, decoration: const InputDecoration(hintText: 'Wpisz lub wklej kod')),
+        content: TextField(
+          controller: eanController,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Wpisz lub wklej kod'),
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Anuluj')),
           ElevatedButton(
@@ -179,7 +320,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 final items = ref.read(currentItemsProvider).value ?? [];
                 final existing = items.where((i) => i.ean == ean).toList();
                 if (existing.isNotEmpty) {
-                  ref.read(itemRepositoryProvider).updateQuantity(storageId, existing.first.id, 1);
+                  ref.read(itemRepositoryProvider)
+                      .updateQuantity(storageId, existing.first.id, 1);
                 } else {
                   _showAddProductSheet(context, ref, storageId, ean: ean);
                 }
@@ -194,8 +336,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final storage = ref.watch(currentStorageProvider);
-    final user = ref.watch(authStateProvider).value;
+    final storage    = ref.watch(currentStorageProvider);
+    final user       = ref.watch(authStateProvider).value;
     final sortConfig = ref.watch(itemSortProvider);
 
     return Scaffold(
@@ -205,75 +347,113 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           decoration: InputDecoration(
             hintText: storage != null ? 'Szukaj w: ${storage.name}' : 'iteMY',
             border: InputBorder.none,
-            suffixIcon: _searchController.text.isNotEmpty 
-              ? IconButton(icon: const Icon(Icons.clear), onPressed: () { _searchController.clear(); ref.read(itemSearchQueryProvider.notifier).state = ""; setState(() {}); })
-              : null,
+            suffixIcon: _searchController.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear),
+                    onPressed: () {
+                      _searchController.clear();
+                      // NAPRAWIONO: .state= → .update() aby uniknąć @visibleForTesting
+                      ref.read(itemSearchQueryProvider.notifier).update((_) => "");
+                      setState(() {});
+                    })
+                : null,
           ),
-          onChanged: (val) { ref.read(itemSearchQueryProvider.notifier).state = val; setState(() {}); },
+          onChanged: (val) {
+            ref.read(itemSearchQueryProvider.notifier).update((_) => val);
+            setState(() {});
+          },
         ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           PopupMenuButton<SortOption>(
             icon: const Icon(Icons.sort),
-            onSelected: (opt) => ref.read(itemSortProvider.notifier).state = sortConfig.copyWith(option: opt),
+            onSelected: (opt) => ref
+                .read(itemSortProvider.notifier)
+                .update((_) => sortConfig.copyWith(option: opt)),
             itemBuilder: (context) => [
-              const PopupMenuItem(value: SortOption.name, child: Text('Nazwa')),
-              const PopupMenuItem(value: SortOption.ean, child: Text('EAN')),
-              const PopupMenuItem(value: SortOption.date, child: Text('Data')),
+              const PopupMenuItem(value: SortOption.name,     child: Text('Nazwa')),
+              const PopupMenuItem(value: SortOption.ean,      child: Text('EAN')),
+              const PopupMenuItem(value: SortOption.date,     child: Text('Data')),
               const PopupMenuItem(value: SortOption.quantity, child: Text('Ilość')),
             ],
           ),
           IconButton(
             icon: Icon(sortConfig.ascending ? Icons.arrow_upward : Icons.arrow_downward),
-            onPressed: () => ref.read(itemSortProvider.notifier).state = sortConfig.copyWith(ascending: !sortConfig.ascending),
+            onPressed: () => ref
+                .read(itemSortProvider.notifier)
+                .update((_) => sortConfig.copyWith(ascending: !sortConfig.ascending)),
           ),
         ],
       ),
       drawer: const StorageDrawer(),
-      body: storage == null 
-        ? Center(child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text('Nie wybrano magazynu.'),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: () => ref.read(storageRepositoryProvider).createStorage('Mój Magazyn', user!.uid),
-                child: const Text('Stwórz pierwszy magazyn'))
-            ],
-          ))
-        : const ItemListWidget(),
-      floatingActionButton: storage == null ? null : Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          FloatingActionButton(onPressed: () => _showAddProductSheet(context, ref, storage.id), heroTag: 'add', child: const Icon(Icons.add)),
-          const SizedBox(width: 12),
-          FloatingActionButton.extended(onPressed: () => _showScanDialog(context, ref, storage.id), heroTag: 'scan', label: const Text('Skanuj'), icon: const Icon(Icons.qr_code_scanner)),
-        ],
-      ),
+      body: storage == null
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text('Nie wybrano magazynu.'),
+                  const SizedBox(height: 20),
+                  ElevatedButton(
+                    onPressed: () => ref
+                        .read(storageRepositoryProvider)
+                        .createStorage('Mój Magazyn', user!.uid),
+                    child: const Text('Stwórz pierwszy magazyn'),
+                  ),
+                ],
+              ),
+            )
+          : const ItemListWidget(),
+      floatingActionButton: storage == null
+          ? null
+          : Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                FloatingActionButton(
+                  onPressed: () => _showAddProductSheet(context, ref, storage.id),
+                  heroTag: 'add',
+                  child: const Icon(Icons.add),
+                ),
+                const SizedBox(width: 12),
+                FloatingActionButton.extended(
+                  onPressed: () => _showScanDialog(context, ref, storage.id),
+                  heroTag: 'scan',
+                  label: const Text('Skanuj'),
+                  icon: const Icon(Icons.qr_code_scanner),
+                ),
+              ],
+            ),
     );
   }
 }
 
+// ── Szuflada z magazynami ──────────────────────────────────────────────────────
 class StorageDrawer extends ConsumerWidget {
   const StorageDrawer({super.key});
 
-  void _showStorageDialog(BuildContext context, WidgetRef ref, {StorageModel? existing}) {
+  void _showStorageDialog(BuildContext context, WidgetRef ref,
+      {StorageModel? existing}) {
     final controller = TextEditingController(text: existing?.name);
     final user = ref.read(authStateProvider).value;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(existing == null ? 'Nowy magazyn' : 'Zmień nazwę'),
-        content: TextField(controller: controller, decoration: const InputDecoration(labelText: 'Nazwa magazynu'), autofocus: true),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(labelText: 'Nazwa magazynu'),
+          autofocus: true,
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Anuluj')),
           ElevatedButton(
             onPressed: () {
               if (controller.text.isNotEmpty && user != null) {
                 if (existing == null) {
-                  ref.read(storageRepositoryProvider).createStorage(controller.text, user.uid);
+                  ref.read(storageRepositoryProvider)
+                      .createStorage(controller.text, user.uid);
                 } else {
-                  ref.read(storageRepositoryProvider).renameStorage(existing.id, controller.text);
+                  ref.read(storageRepositoryProvider)
+                      .renameStorage(existing.id, controller.text);
                 }
                 Navigator.pop(context);
               }
@@ -287,38 +467,51 @@ class StorageDrawer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final storagesAsync = ref.watch(userStoragesProvider);
+    final storagesAsync  = ref.watch(userStoragesProvider);
     final currentStorage = ref.watch(currentStorageProvider);
 
     return Drawer(
       child: Column(
         children: [
           DrawerHeader(
-            decoration: BoxDecoration(color: Theme.of(context).colorScheme.primaryContainer),
-            child: const Center(child: Text('Twoje Magazyny', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold))),
+            decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer),
+            child: const Center(
+                child: Text('Twoje Magazyny',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold))),
           ),
           Expanded(
             child: storagesAsync.when(
               data: (list) => ListView.builder(
                 itemCount: list.length,
                 itemBuilder: (context, index) {
-                  final s = list[index];
+                  final s          = list[index];
                   final isSelected = currentStorage?.id == s.id;
                   return ListTile(
-                    leading: Icon(Icons.warehouse, color: isSelected ? Colors.blue : null),
-                    title: Text(s.name, style: TextStyle(fontWeight: isSelected ? FontWeight.bold : null)),
+                    leading: Icon(Icons.warehouse,
+                        color: isSelected ? Colors.blue : null),
+                    title: Text(s.name,
+                        style: TextStyle(
+                            fontWeight: isSelected ? FontWeight.bold : null)),
                     selected: isSelected,
                     onTap: () {
-                      ref.read(activeStorageIdProvider.notifier).state = s.id;
+                      ref.read(activeStorageIdProvider.notifier).setStorage(s.id);
                       Navigator.pop(context);
                     },
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        IconButton(icon: const Icon(Icons.edit, size: 18), onPressed: () => _showStorageDialog(context, ref, existing: s)),
                         IconButton(
-                          icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red), 
-                          onPressed: () => ref.read(storageRepositoryProvider).deleteStorage(s.id)
+                          icon: const Icon(Icons.edit, size: 18),
+                          onPressed: () =>
+                              _showStorageDialog(context, ref, existing: s),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline,
+                              size: 18, color: Colors.red),
+                          onPressed: () => ref
+                              .read(storageRepositoryProvider)
+                              .deleteStorage(s.id),
                         ),
                       ],
                     ),
@@ -342,19 +535,20 @@ class StorageDrawer extends ConsumerWidget {
   }
 }
 
+// ── Lista produktów ────────────────────────────────────────────────────────────
 class ItemListWidget extends ConsumerWidget {
   const ItemListWidget({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final itemsAsync = ref.watch(filteredItemsProvider);
     return itemsAsync.when(
-      data: (items) => items.isEmpty 
-        ? const Center(child: Text('Pusto tutaj. Dodaj coś!'))
-        : ListView.builder(
-            padding: const EdgeInsets.only(bottom: 100, top: 8),
-            itemCount: items.length,
-            itemBuilder: (context, index) => ItemCard(item: items[index]),
-          ),
+      data: (items) => items.isEmpty
+          ? const Center(child: Text('Pusto tutaj. Dodaj coś!'))
+          : ListView.builder(
+              padding: const EdgeInsets.only(bottom: 100, top: 8),
+              itemCount: items.length,
+              itemBuilder: (context, index) => ItemCard(item: items[index]),
+            ),
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, s) => Center(child: Text('Błąd: $e')),
     );

@@ -4,28 +4,36 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'firebase_options.dart';
 import 'features/auth/providers/auth_provider.dart';
 import 'features/inventory/providers/storage_providers.dart';
 import 'features/inventory/providers/item_providers.dart';
 import 'features/inventory/data/storage_repository.dart';
 import 'features/inventory/data/item_repository.dart';
 import 'features/inventory/models/item_model.dart';
+import 'features/inventory/models/storage_model.dart'; // NAPRAWIONO: Dodano brakujący import
 import 'features/inventory/presentation/item_card.dart';
+
+class DefaultFirebaseOptions {
+  static FirebaseOptions get currentPlatform => const FirebaseOptions(
+    apiKey: 'AIzaSyD3w-CM32p3pqul9Ucc8nS4n62sYrKyFoU',
+    appId: '1:776937770544:web:2a149f4b8f56848a56a7f5',
+    messagingSenderId: '776937770544',
+    projectId: 'itemy-63118',
+    authDomain: 'itemy-63118.firebaseapp.com',
+    storageBucket: 'itemy-63118.firebasestorage.app',
+  );
+}
 
 final sharedPrefsProvider = Provider<SharedPreferences>((ref) => throw UnimplementedError());
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
   try {
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform); 
   } catch (e) {
     debugPrint("Firebase init error: $e");
   }
-
   final prefs = await SharedPreferences.getInstance();
-
   runApp(ProviderScope(
     overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
     child: const IteMYApp(),
@@ -34,7 +42,6 @@ void main() async {
 
 class IteMYApp extends ConsumerWidget {
   const IteMYApp({super.key});
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authStateProvider);
@@ -73,8 +80,14 @@ class _LoadingScreenState extends ConsumerState<LoadingScreen> {
   Widget build(BuildContext context) => const Scaffold(body: Center(child: CircularProgressIndicator()));
 }
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  final TextEditingController _searchController = TextEditingController();
 
   void _showAddProductSheet(BuildContext context, WidgetRef ref, String storageId, {String? ean}) {
     final nameController = TextEditingController();
@@ -107,19 +120,14 @@ class HomeScreen extends ConsumerWidget {
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      Expanded(
-                        flex: 2,
-                        child: TextField(controller: qtyController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Ilość', border: OutlineInputBorder())),
-                      ),
+                      Expanded(flex: 2, child: TextField(controller: qtyController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Ilość', border: OutlineInputBorder()))),
                       const SizedBox(width: 12),
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          value: selectedUnit,
-                          decoration: const InputDecoration(labelText: 'Jedn.', border: OutlineInputBorder()),
-                          items: ['szt', 'kpl', 'g', 'kg', 'm', 'cm', 'm2', 'm3'].map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
-                          onChanged: (v) => setState(() => selectedUnit = v!),
-                        ),
-                      ),
+                      Expanded(child: DropdownButtonFormField<String>(
+                        value: selectedUnit,
+                        decoration: const InputDecoration(labelText: 'Jedn.', border: OutlineInputBorder()),
+                        items: ['szt', 'kpl', 'g', 'kg', 'm', 'cm', 'm2', 'm3'].map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
+                        onChanged: (v) => setState(() => selectedUnit = v!),
+                      )),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -136,14 +144,9 @@ class HomeScreen extends ConsumerWidget {
                       onPressed: () {
                         if (nameController.text.isNotEmpty) {
                           final newItem = ItemModel(
-                            id: '', 
-                            name: nameController.text, 
-                            ean: eanController.text.isEmpty ? null : eanController.text,
-                            quantity: double.tryParse(qtyController.text) ?? 1.0,
-                            unit: selectedUnit,
-                            description: descController.text,
-                            imageUrl: urlController.text,
-                            updatedAt: DateTime.now()
+                            id: '', name: nameController.text, ean: eanController.text.isEmpty ? null : eanController.text,
+                            quantity: double.tryParse(qtyController.text) ?? 1.0, unit: selectedUnit,
+                            description: descController.text, imageUrl: urlController.text, updatedAt: DateTime.now()
                           );
                           ref.read(itemRepositoryProvider).upsertItem(storageId, newItem);
                           Navigator.pop(context);
@@ -167,12 +170,7 @@ class HomeScreen extends ConsumerWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Skanowanie kodu EAN'),
-        content: TextField(
-          controller: eanController,
-          keyboardType: TextInputType.number,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Wpisz lub wklej kod'),
-        ),
+        content: TextField(controller: eanController, keyboardType: TextInputType.number, autofocus: true, decoration: const InputDecoration(hintText: 'Wpisz lub wklej kod')),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Anuluj')),
           ElevatedButton(
@@ -182,7 +180,6 @@ class HomeScreen extends ConsumerWidget {
                 Navigator.pop(context);
                 final items = ref.read(currentItemsProvider).value ?? [];
                 final existing = items.where((i) => i.ean == ean).toList();
-
                 if (existing.isNotEmpty) {
                   ref.read(itemRepositoryProvider).updateQuantity(storageId, existing.first.id, 1);
                 } else {
@@ -198,19 +195,23 @@ class HomeScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final storage = ref.watch(currentStorageProvider);
     final user = ref.watch(authStateProvider).value;
     final sortConfig = ref.watch(itemSortProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: storage == null ? const Text('iteMY') : TextField(
-          decoration: const InputDecoration(
-            hintText: 'Szukaj produktów...',
+        title: TextField(
+          controller: _searchController,
+          decoration: InputDecoration(
+            hintText: storage != null ? 'Szukaj w: ${storage.name}' : 'iteMY',
             border: InputBorder.none,
+            suffixIcon: _searchController.text.isNotEmpty 
+              ? IconButton(icon: const Icon(Icons.clear), onPressed: () { _searchController.clear(); ref.read(itemSearchQueryProvider.notifier).state = ""; setState(() {}); })
+              : null,
           ),
-          onChanged: (val) => ref.read(itemSearchQueryProvider.notifier).state = val,
+          onChanged: (val) { ref.read(itemSearchQueryProvider.notifier).state = val; setState(() {}); },
         ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
@@ -218,10 +219,10 @@ class HomeScreen extends ConsumerWidget {
             icon: const Icon(Icons.sort),
             onSelected: (opt) => ref.read(itemSortProvider.notifier).state = sortConfig.copyWith(option: opt),
             itemBuilder: (context) => [
-              const PopupMenuItem(value: SortOption.name, child: Text('Sortuj po nazwie')),
-              const PopupMenuItem(value: SortOption.ean, child: Text('Sortuj po EAN')),
-              const PopupMenuItem(value: SortOption.date, child: Text('Sortuj po dacie')),
-              const PopupMenuItem(value: SortOption.quantity, child: Text('Sortuj po ilości')),
+              const PopupMenuItem(value: SortOption.name, child: Text('Nazwa')),
+              const PopupMenuItem(value: SortOption.ean, child: Text('EAN')),
+              const PopupMenuItem(value: SortOption.date, child: Text('Data')),
+              const PopupMenuItem(value: SortOption.quantity, child: Text('Ilość')),
             ],
           ),
           IconButton(
@@ -230,26 +231,113 @@ class HomeScreen extends ConsumerWidget {
           ),
         ],
       ),
+      drawer: const StorageDrawer(),
       body: storage == null 
-        ? Center(child: ElevatedButton(
-            onPressed: () => ref.read(storageRepositoryProvider).createStorage('Mój Magazyn', user!.uid),
-            child: const Text('Inicjalizuj Magazyn')))
+        ? Center(child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('Nie wybrano magazynu.'),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () => ref.read(storageRepositoryProvider).createStorage('Mój Magazyn', user!.uid),
+                child: const Text('Stwórz pierwszy magazyn'))
+            ],
+          ))
         : const ItemListWidget(),
       floatingActionButton: storage == null ? null : Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          FloatingActionButton(
-            onPressed: () => _showAddProductSheet(context, ref, storage.id),
-            heroTag: 'manual_add',
-            child: const Icon(Icons.add),
-          ),
+          FloatingActionButton(onPressed: () => _showAddProductSheet(context, ref, storage.id), heroTag: 'add', child: const Icon(Icons.add)),
           const SizedBox(width: 12),
-          FloatingActionButton.extended(
-            onPressed: () => _showScanDialog(context, ref, storage.id),
-            heroTag: 'ean_scan',
-            label: const Text('Skanuj EAN'),
-            icon: const Icon(Icons.qr_code_scanner),
+          FloatingActionButton.extended(onPressed: () => _showScanDialog(context, ref, storage.id), heroTag: 'scan', label: const Text('Skanuj'), icon: const Icon(Icons.qr_code_scanner)),
+        ],
+      ),
+    );
+  }
+}
+
+class StorageDrawer extends ConsumerWidget {
+  const StorageDrawer({super.key});
+
+  void _showStorageDialog(BuildContext context, WidgetRef ref, {StorageModel? existing}) {
+    final controller = TextEditingController(text: existing?.name);
+    final user = ref.read(authStateProvider).value;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(existing == null ? 'Nowy magazyn' : 'Zmień nazwę'),
+        content: TextField(controller: controller, decoration: const InputDecoration(labelText: 'Nazwa magazynu'), autofocus: true),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Anuluj')),
+          ElevatedButton(
+            onPressed: () {
+              if (controller.text.isNotEmpty && user != null) {
+                if (existing == null) {
+                  ref.read(storageRepositoryProvider).createStorage(controller.text, user.uid);
+                } else {
+                  ref.read(storageRepositoryProvider).renameStorage(existing.id, controller.text);
+                }
+                Navigator.pop(context);
+              }
+            },
+            child: const Text('Zapisz'),
           ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final storagesAsync = ref.watch(userStoragesProvider);
+    final currentStorage = ref.watch(currentStorageProvider);
+
+    return Drawer(
+      child: Column(
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(color: Theme.of(context).colorScheme.primaryContainer),
+            child: const Center(child: Text('Twoje Magazyny', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold))),
+          ),
+          Expanded(
+            child: storagesAsync.when(
+              data: (list) => ListView.builder(
+                itemCount: list.length,
+                itemBuilder: (context, index) {
+                  final s = list[index];
+                  final isSelected = currentStorage?.id == s.id;
+                  return ListTile(
+                    leading: Icon(Icons.warehouse, color: isSelected ? Colors.blue : null),
+                    title: Text(s.name, style: TextStyle(fontWeight: isSelected ? FontWeight.bold : null)),
+                    selected: isSelected,
+                    onTap: () {
+                      ref.read(activeStorageIdProvider.notifier).state = s.id;
+                      Navigator.pop(context);
+                    },
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(icon: const Icon(Icons.edit, size: 18), onPressed: () => _showStorageDialog(context, ref, existing: s)),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red), 
+                          onPressed: () => ref.read(storageRepositoryProvider).deleteStorage(s.id)
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(child: Text('Błąd: $e')),
+            ),
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.add),
+            title: const Text('Dodaj nowy magazyn'),
+            onTap: () => _showStorageDialog(context, ref),
+          ),
+          const SizedBox(height: 20),
         ],
       ),
     );
@@ -263,7 +351,7 @@ class ItemListWidget extends ConsumerWidget {
     final itemsAsync = ref.watch(filteredItemsProvider);
     return itemsAsync.when(
       data: (items) => items.isEmpty 
-        ? const Center(child: Text('Brak wyników.'))
+        ? const Center(child: Text('Pusto tutaj. Dodaj coś!'))
         : ListView.builder(
             padding: const EdgeInsets.only(bottom: 100, top: 8),
             itemCount: items.length,
@@ -274,7 +362,6 @@ class ItemListWidget extends ConsumerWidget {
     );
   }
 }
-
 
 --- [KONIEC PLIKU: lib/main.dart] ---
 
@@ -288,56 +375,67 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 final firebaseAuthProvider = Provider<FirebaseAuth>((ref) => FirebaseAuth.instance);
 final firestoreProvider = Provider<FirebaseFirestore>((ref) => FirebaseFirestore.instance);
 
-
 --- [KONIEC PLIKU: lib/core/providers/firebase_providers.dart] ---
 
 
-### LOKALIZACJA: lib/features/models/item_model.dart
+### LOKALIZACJA: lib/features/auth/data/auth_repository.dart
 
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-class InventoryItem {
-  final String id;
-  final String ean;
-  final String name;
-  final int quantity;
-  final int minStock;
-  final DateTime lastUpdated;
+class AuthRepository {
+  final FirebaseAuth _auth;
+  AuthRepository(this._auth);
 
-  InventoryItem({
-    required this.id,
-    required this.ean,
-    required this.name,
-    this.quantity = 0,
-    this.minStock = 0,
-    required this.lastUpdated,
-  });
+  Stream<User?> get authStateChanges => _auth.authStateChanges();
 
-  // Konwersja z Firestore
-  factory InventoryItem.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
-    return InventoryItem(
-      id: doc.id,
-      ean: data['ean'] ?? '',
-      name: data['name'] ?? 'Nieznany produkt',
-      quantity: data['quantity'] ?? 0,
-      minStock: data['min_stock'] ?? 0,
-      lastUpdated: (data['last_updated'] as Timestamp).toDate(),
-    );
+  Future<UserCredential> signInAnonymously() async {
+    return await _auth.signInAnonymously();
   }
 
-  // Konwersja do Firestore
-  Map<String, dynamic> toFirestore() => {
-    'ean': ean,
-    'name': name,
-    'quantity': quantity,
-    'min_stock': minStock,
-    'last_updated': FieldValue.serverTimestamp(),
-  };
+  Future<void> signOut() async {
+    await _auth.signOut();
+  }
+
+  User? get currentUser => _auth.currentUser;
 }
 
+--- [KONIEC PLIKU: lib/features/auth/data/auth_repository.dart] ---
 
---- [KONIEC PLIKU: lib/features/models/item_model.dart] ---
+
+### LOKALIZACJA: lib/features/auth/providers/auth_provider.dart
+
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/providers/firebase_providers.dart';
+import '../data/auth_repository.dart';
+
+final authRepositoryProvider = Provider<AuthRepository>((ref) {
+  return AuthRepository(ref.watch(firebaseAuthProvider));
+});
+
+final authStateProvider = StreamProvider<User?>((ref) {
+  return ref.watch(authRepositoryProvider).authStateChanges;
+});
+
+final authControllerProvider = Provider((ref) => AuthController(ref.read(firebaseAuthProvider)));
+
+class AuthController {
+  final FirebaseAuth _auth;
+  AuthController(this._auth);
+
+  Future<void> initializeAuth() async {
+    try {
+      if (_auth.currentUser == null) {
+        await _auth.signInAnonymously();
+      }
+    } catch (e) {
+      debugPrint("Auth Error: $e");
+    }
+  }
+}
+
+--- [KONIEC PLIKU: lib/features/auth/providers/auth_provider.dart] ---
 
 
 ### LOKALIZACJA: lib/features/inventory/data/item_repository.dart
@@ -377,7 +475,6 @@ class ItemRepository {
   }
 }
 
-
 --- [KONIEC PLIKU: lib/features/inventory/data/item_repository.dart] ---
 
 
@@ -395,8 +492,10 @@ class StorageRepository {
   StorageRepository(this._db);
 
   Stream<List<StorageModel>> watchUserStorages(String uid) {
-    return _db.collection('storages').where('access_uids', arrayContains: uid)
-        .snapshots().map((s) => s.docs.map((d) => StorageModel.fromFirestore(d)).toList());
+    return _db.collection('storages')
+        .where('access_uids', arrayContains: uid)
+        .snapshots()
+        .map((s) => s.docs.map((d) => StorageModel.fromFirestore(d)).toList());
   }
 
   Future<void> createStorage(String name, String uid) async {
@@ -406,8 +505,16 @@ class StorageRepository {
       'created_at': FieldValue.serverTimestamp(),
     });
   }
-}
 
+  Future<void> renameStorage(String id, String newName) async {
+    await _db.collection('storages').doc(id).update({'name': newName});
+  }
+
+  Future<void> deleteStorage(String id) async {
+    // Uwaga: W produkcji należałoby też usunąć podkolekcję 'items'
+    await _db.collection('storages').doc(id).delete();
+  }
+}
 
 --- [KONIEC PLIKU: lib/features/inventory/data/storage_repository.dart] ---
 
@@ -454,7 +561,6 @@ class ItemModel {
   };
 }
 
-
 --- [KONIEC PLIKU: lib/features/inventory/models/item_model.dart] ---
 
 
@@ -479,7 +585,6 @@ class StorageModel {
   }
 }
 
-
 --- [KONIEC PLIKU: lib/features/inventory/models/storage_model.dart] ---
 
 
@@ -494,6 +599,25 @@ import '../providers/storage_providers.dart';
 class ItemCard extends ConsumerWidget {
   final ItemModel item;
   const ItemCard({super.key, required this.item});
+
+  Future<String?> _simulateScan(BuildContext context) async {
+    String? result;
+    await showDialog(
+      context: context,
+      builder: (context) {
+        final controller = TextEditingController();
+        return AlertDialog(
+          title: const Text('Skaner'),
+          content: TextField(controller: controller, autofocus: true, decoration: const InputDecoration(hintText: 'Zeskanowano...'), keyboardType: TextInputType.number),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Anuluj')),
+            ElevatedButton(onPressed: () { result = controller.text; Navigator.pop(context); }, child: const Text('OK')),
+          ],
+        );
+      }
+    );
+    return result;
+  }
 
   void _showEditSheet(BuildContext context, WidgetRef ref, String storageId) {
     final nameController = TextEditingController(text: item.name);
@@ -511,73 +635,90 @@ class ItemCard extends ConsumerWidget {
           padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
           child: Padding(
             padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Edytuj produkt', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 16),
-                TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Nazwa', border: OutlineInputBorder())),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: TextField(controller: qtyController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Ilość', border: OutlineInputBorder())),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // PODGLĄD OBRAZU - Dostosowany do kontenera
+                  Container(
+                    height: 180,
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(12)),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: urlController.text.isNotEmpty
+                        ? Image.network(
+                            urlController.text, 
+                            fit: BoxFit.contain, // Obrazek dopasowuje się do kontenera bez obcinania
+                            errorBuilder: (_,__,___) => const Icon(Icons.broken_image, size: 50),
+                            loadingBuilder: (context, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return const Center(child: CircularProgressIndicator());
+                            },
+                          )
+                        : const Icon(Icons.image, size: 50, color: Colors.grey),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
+                  ),
+                  const Text('Edytuj produkt', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 16),
+                  TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Nazwa', border: OutlineInputBorder())),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(flex: 2, child: TextField(controller: qtyController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Ilość', border: OutlineInputBorder()))),
+                      const SizedBox(width: 12),
+                      Expanded(child: DropdownButtonFormField<String>(
                         value: selectedUnit,
                         decoration: const InputDecoration(labelText: 'Jedn.', border: OutlineInputBorder()),
                         items: ['szt', 'kpl', 'g', 'kg', 'm', 'cm', 'm2', 'm3'].map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
                         onChanged: (v) => setState(() => selectedUnit = v!),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                TextField(controller: eanController, decoration: const InputDecoration(labelText: 'EAN', border: OutlineInputBorder())),
-                const SizedBox(height: 12),
-                TextField(controller: urlController, decoration: const InputDecoration(labelText: 'Link do zdjęcia', border: OutlineInputBorder())),
-                const SizedBox(height: 12),
-                TextField(controller: descController, maxLines: 2, decoration: const InputDecoration(labelText: 'Opis', border: OutlineInputBorder())),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          ref.read(itemRepositoryProvider).deleteItem(storageId, item.id);
-                          Navigator.pop(context);
+                      )),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(flex: 3, child: TextField(controller: eanController, decoration: const InputDecoration(labelText: 'EAN', border: OutlineInputBorder()))),
+                      const SizedBox(width: 12),
+                      Expanded(child: SizedBox(height: 56, child: ElevatedButton(
+                        onPressed: () async {
+                          final scanned = await _simulateScan(context);
+                          if (scanned != null) { eanController.text = scanned; setState(() {}); }
                         },
+                        child: const Icon(Icons.qr_code_scanner),
+                      ))),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(controller: urlController, decoration: const InputDecoration(labelText: 'Link do zdjęcia', border: OutlineInputBorder()), onChanged: (v) => setState(() {})),
+                  const SizedBox(height: 12),
+                  TextField(controller: descController, maxLines: 2, decoration: const InputDecoration(labelText: 'Opis', border: OutlineInputBorder())),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(child: OutlinedButton.icon(
+                        onPressed: () { ref.read(itemRepositoryProvider).deleteItem(storageId, item.id); Navigator.pop(context); },
                         style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-                        icon: const Icon(Icons.delete),
-                        label: const Text('Usuń'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
+                        icon: const Icon(Icons.delete), label: const Text('Usuń'),
+                      )),
+                      const SizedBox(width: 12),
+                      Expanded(child: ElevatedButton(
                         onPressed: () {
                           final updated = ItemModel(
-                            id: item.id,
-                            name: nameController.text,
-                            ean: eanController.text,
+                            id: item.id, name: nameController.text, ean: eanController.text,
                             quantity: double.tryParse(qtyController.text) ?? item.quantity,
-                            unit: selectedUnit,
-                            description: descController.text,
-                            imageUrl: urlController.text,
-                            updatedAt: DateTime.now(),
+                            unit: selectedUnit, description: descController.text, imageUrl: urlController.text, updatedAt: DateTime.now(),
                           );
                           ref.read(itemRepositoryProvider).upsertItem(storageId, updated);
                           Navigator.pop(context);
                         },
                         child: const Text('Zapisz'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+                      )),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -588,39 +729,35 @@ class ItemCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final storageId = ref.watch(currentStorageProvider)?.id;
-
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       elevation: 0.5,
       child: ListTile(
         onTap: () => storageId != null ? _showEditSheet(context, ref, storageId) : null,
-        // ZDJĘCIE Z LEWEJ
         leading: ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: Container(
-            width: 50, height: 50, color: Colors.grey[200],
-            child: item.imageUrl != null 
+            width: 50, height: 50, color: Colors.grey[100],
+            child: item.imageUrl != null && item.imageUrl!.isNotEmpty
               ? Image.network(item.imageUrl!, fit: BoxFit.cover, errorBuilder: (_,__,___) => const Icon(Icons.inventory_2))
               : const Icon(Icons.inventory_2, color: Colors.grey),
           ),
         ),
         title: Text(item.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(item.ean ?? 'Brak EAN', style: const TextStyle(fontSize: 12)),
-        // KONTROLA ILOŚCI Z PRAWEJ
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (item.ean != null && item.ean!.isNotEmpty) Text(item.ean!, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            if (item.description != null && item.description!.isNotEmpty)
+              Text(item.description!, style: const TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+          ],
+        ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
               icon: item.quantity <= 0 ? const Icon(Icons.delete_forever, color: Colors.red) : const Icon(Icons.remove_circle_outline),
-              onPressed: () {
-                if (storageId != null) {
-                  if (item.quantity <= 0) {
-                    ref.read(itemRepositoryProvider).deleteItem(storageId, item.id);
-                  } else {
-                    ref.read(itemRepositoryProvider).updateQuantity(storageId, item.id, -1);
-                  }
-                }
-              },
+              onPressed: () => storageId != null ? (item.quantity <= 0 ? ref.read(itemRepositoryProvider).deleteItem(storageId, item.id) : ref.read(itemRepositoryProvider).updateQuantity(storageId, item.id, -1)) : null,
             ),
             Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -629,10 +766,7 @@ class ItemCard extends ConsumerWidget {
                 Text(item.unit, style: const TextStyle(fontSize: 10, color: Colors.grey)),
               ],
             ),
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline, color: Colors.blue),
-              onPressed: () => storageId != null ? ref.read(itemRepositoryProvider).updateQuantity(storageId, item.id, 1) : null,
-            ),
+            IconButton(icon: const Icon(Icons.add_circle_outline, color: Colors.blue), onPressed: () => storageId != null ? ref.read(itemRepositoryProvider).updateQuantity(storageId, item.id, 1) : null),
           ],
         ),
       ),
@@ -640,33 +774,7 @@ class ItemCard extends ConsumerWidget {
   }
 }
 
-
 --- [KONIEC PLIKU: lib/features/inventory/presentation/item_card.dart] ---
-
-
-### LOKALIZACJA: lib/features/auth/data/auth_repository.dart
-
-import 'package:firebase_auth/firebase_auth.dart';
-
-class AuthRepository {
-  final FirebaseAuth _auth;
-  AuthRepository(this._auth);
-
-  Stream<User?> get authStateChanges => _auth.authStateChanges();
-
-  Future<UserCredential> signInAnonymously() async {
-    return await _auth.signInAnonymously();
-  }
-
-  Future<void> signOut() async {
-    await _auth.signOut();
-  }
-
-  User? get currentUser => _auth.currentUser;
-}
-
-
---- [KONIEC PLIKU: lib/features/auth/data/auth_repository.dart] ---
 
 
 ### LOKALIZACJA: lib/features/inventory/providers/item_providers.dart
@@ -697,7 +805,7 @@ final currentItemsProvider = StreamProvider<List<ItemModel>>((ref) {
 
 final filteredItemsProvider = Provider<AsyncValue<List<ItemModel>>>((ref) {
   final itemsAsync = ref.watch(currentItemsProvider);
-  final query = ref.watch(itemSearchQueryProvider).toLowerCase();
+  final query = ref.watch(itemSearchQuery_provider).toLowerCase();
   final sort = ref.watch(itemSortProvider);
 
   return itemsAsync.whenData((items) {
@@ -721,7 +829,6 @@ final filteredItemsProvider = Provider<AsyncValue<List<ItemModel>>>((ref) {
   });
 });
 
-
 --- [KONIEC PLIKU: lib/features/inventory/providers/item_providers.dart] ---
 
 
@@ -732,9 +839,17 @@ import '../models/storage_model.dart';
 import '../data/storage_repository.dart';
 import '../../auth/providers/auth_provider.dart';
 
+// Przechowuje ID wybranego magazynu. Jeśli null, wybieramy pierwszy dostępny.
+final activeStorageIdProvider = StateProvider<String?>((ref) => null);
+
 final currentStorageProvider = Provider<StorageModel?>((ref) {
   final storages = ref.watch(userStoragesProvider).value ?? [];
-  return storages.isNotEmpty ? storages.first : null;
+  final activeId = ref.watch(activeStorageIdProvider);
+  
+  if (storages.isEmpty) return null;
+  if (activeId == null) return storages.first;
+  
+  return storages.firstWhere((s) => s.id == activeId, orElse: () => storages.first);
 });
 
 final userStoragesProvider = StreamProvider<List<StorageModel>>((ref) {
@@ -743,44 +858,4 @@ final userStoragesProvider = StreamProvider<List<StorageModel>>((ref) {
   return ref.watch(storageRepositoryProvider).watchUserStorages(user.uid);
 });
 
-
 --- [KONIEC PLIKU: lib/features/inventory/providers/storage_providers.dart] ---
-
-
-### LOKALIZACJA: lib/features/auth/providers/auth_provider.dart
-
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/providers/firebase_providers.dart';
-import '../data/auth_repository.dart';
-
-final authRepositoryProvider = Provider<AuthRepository>((ref) {
-  return AuthRepository(ref.watch(firebaseAuthProvider));
-});
-
-final authStateProvider = StreamProvider<User?>((ref) {
-  return ref.watch(authRepositoryProvider).authStateChanges;
-});
-
-final authControllerProvider = Provider((ref) => AuthController(ref.read(firebaseAuthProvider)));
-
-class AuthController {
-  final FirebaseAuth _auth;
-  AuthController(this._auth);
-
-  Future<void> initializeAuth() async {
-    try {
-      if (_auth.currentUser == null) {
-        await _auth.signInAnonymously();
-      }
-    } catch (e) {
-      debugPrint("Auth Error: $e");
-    }
-  }
-}
-
-
---- [KONIEC PLIKU: lib/features/auth/providers/auth_provider.dart] ---
-
-
