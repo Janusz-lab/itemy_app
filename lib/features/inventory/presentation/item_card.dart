@@ -18,6 +18,7 @@ class _ItemCardState extends ConsumerState<ItemCard>
     with SingleTickerProviderStateMixin {
   Timer? _highlightTimer;
   bool _highlighted = false;
+  bool _highlightScheduled = false; // blokuje rejestrację wielu callbacków
 
   @override
   void dispose() {
@@ -31,8 +32,7 @@ class _ItemCardState extends ConsumerState<ItemCard>
     setState(() => _highlighted = true);
     _highlightTimer = Timer(Duration(seconds: seconds), () {
       if (mounted) setState(() => _highlighted = false);
-      // Wyczyść provider po wygaśnięciu podświetlenia
-      ref.read(lastScannedItemIdProvider.notifier).update((_) => null);
+      // Provider czyści whenComplete w main.dart — nie ruszamy go tutaj
     });
   }
 
@@ -349,12 +349,20 @@ class _ItemCardState extends ConsumerState<ItemCard>
   Widget build(BuildContext context) {
     final storageId = ref.watch(currentStorageProvider)?.id;
 
-    // Reaguj na zmianę lastScannedItemIdProvider
-    ref.listen(lastScannedItemIdProvider, (_, next) {
-      if (next == widget.item.id && !_highlighted) {
-        _startHighlight(6);
-      }
-    });
+    // ref.watch zamiast ref.listen — watch zawsze odzwierciedla aktualny stan,
+    // nie może przegapić zmiany podczas rebuilda.
+    // addPostFrameCallback żeby nie wywoływać setState podczas budowania drzewa.
+    final scannedId = ref.watch(lastScannedItemIdProvider);
+    if (scannedId == widget.item.id && !_highlightScheduled) {
+      _highlightScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _startHighlight(10);
+          ref.read(lastScannedItemIdProvider.notifier).update((_) => null);
+        }
+        _highlightScheduled = false;
+      });
+    }
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 400),

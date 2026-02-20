@@ -253,9 +253,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   // ── Quick action sheet po skanie (znaleziony produkt) ─────────────────────
   void _showScanQuickActionSheet(
       BuildContext context, WidgetRef ref, String storageId, ItemModel item) {
-    // Podświetl kartę na liście
-    ref.read(lastScannedItemIdProvider.notifier).update((_) => item.id);
-
     // ── Lokalna ilość — optymistyczny UI, nie czekamy na Firestore ──────────
     double localQty = item.quantity;
     final double qtyAtOpen = item.quantity; // do Undo przy zamknięciu
@@ -263,6 +260,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final storages      = ref.read(userStoragesProvider).value ?? [];
     final otherStorages = storages.where((s) => s.id != storageId).toList();
 
+    // Podświetlenie i scroll PO zamknięciu sheeta
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -439,10 +437,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           );
         },
       ),
-    );
+    ).whenComplete(() {
+      // Zawsze null najpierw, potem ID w osobnym ticku event loop.
+      // Future.microtask był za szybki — Riverpod batchował oba update'y
+      // w jednej klatce i nie widział zmiany gdy ID się nie zmieniło.
+      ref.read(lastScannedItemIdProvider.notifier).update((_) => null);
+      Future.delayed(Duration.zero, () =>
+          ref.read(lastScannedItemIdProvider.notifier).update((_) => item.id));
+    });
   }
 
-  // ── Potwierdzenie usunięcia z kontekstu skanu ──────────────────────────────
+  // ── Potwierdzenie usunięcia z kontekstu skanu ─────────────────────────────
   void _confirmDeleteFromScan(BuildContext context, WidgetRef ref,
       String storageId, ItemModel item) {
     showDialog(
@@ -794,8 +799,8 @@ class _ItemListWidgetState extends ConsumerState<ItemListWidget> {
       final index = items.indexWhere((i) => i.id == scannedId);
       if (index < 0) return;
 
-      // Krótkie opóźnienie — czekamy aż sheet zdąży się zamknąć
-      Future.delayed(const Duration(milliseconds: 350), () {
+      // Sheet jest już zamknięty gdy to odpala — małe opóźnienie na animację listy
+      Future.delayed(const Duration(milliseconds: 100), () {
         if (_scrollController.hasClients) _scrollToIndex(index);
       });
     });
