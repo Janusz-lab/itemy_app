@@ -474,9 +474,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   // ── Przenoszenie z Undo ────────────────────────────────────────────────────
   Future<void> _moveItemWithUndo(WidgetRef ref, BuildContext context,
       String fromId, String toId, String toName, ItemModel item) async {
-    final repo      = ref.read(itemRepositoryProvider);
-    final snapshot  = item;
-    await repo.upsertItem(toId, ItemModel(
+    final repo     = ref.read(itemRepositoryProvider);
+    final snapshot = item;
+
+    // upsertItem zwraca ID nowego dokumentu w magazynie docelowym
+    final newId = await repo.upsertItem(toId, ItemModel(
       id: '', name: snapshot.name, ean: snapshot.ean,
       quantity: snapshot.quantity, unit: snapshot.unit,
       description: snapshot.description, imageUrl: snapshot.imageUrl,
@@ -487,8 +489,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (!context.mounted) return;
     _showUndoSnackBar(context,
       '${snapshot.name} → $toName',
-      onUndo: () async =>
-          ref.read(itemRepositoryProvider).upsertItem(fromId, snapshot),
+      onUndo: () async {
+        // Usuń z docelowego (znamy ID) i przywróć w źródłowym
+        await repo.deleteItem(toId, newId);
+        await repo.upsertItem(fromId, snapshot);
+      },
     );
   }
 

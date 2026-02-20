@@ -299,10 +299,11 @@ class _ItemCardState extends ConsumerState<ItemCard>
   // ── Przenoszenie produktu z Undo ──────────────────────────────────────────
   Future<void> _moveItem(WidgetRef ref, String fromId, String toId,
       String toName, BuildContext context) async {
-    final repo      = ref.read(itemRepositoryProvider);
-    final snapshot  = widget.item;
+    final repo     = ref.read(itemRepositoryProvider);
+    final snapshot = widget.item;
 
-    final movedItem = ItemModel(
+    // upsertItem zwraca ID nowego dokumentu w magazynie docelowym
+    final newId = await repo.upsertItem(toId, ItemModel(
       id: '',
       name: snapshot.name,
       ean: snapshot.ean,
@@ -311,8 +312,7 @@ class _ItemCardState extends ConsumerState<ItemCard>
       description: snapshot.description,
       imageUrl: snapshot.imageUrl,
       updatedAt: DateTime.now(),
-    );
-    await repo.upsertItem(toId, movedItem);
+    ));
     await repo.deleteItem(fromId, snapshot.id);
 
     if (!context.mounted) return;
@@ -320,8 +320,8 @@ class _ItemCardState extends ConsumerState<ItemCard>
       context,
       '${snapshot.name} → $toName',
       onUndo: () async {
-        // Cofnij: usuń z docelowego (trudne bez ID), odtwórz w źródłowym
-        // Uproszczone undo: przywróć w oryginalnym magazynie
+        // Usuń z docelowego (znamy ID) i przywróć w źródłowym
+        await repo.deleteItem(toId, newId);
         await repo.upsertItem(fromId, snapshot);
       },
     );
