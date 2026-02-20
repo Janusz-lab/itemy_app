@@ -17,6 +17,10 @@ final itemSearchQueryProvider = StateProvider<String>((ref) => "");
 final itemSortProvider = StateProvider<SortConfig>(
     (ref) => SortConfig(option: SortOption.name, ascending: true));
 
+/// ID ostatnio zeskanowanego produktu — używane do podświetlenia na liście.
+/// Ustawiane po skanie, czyszczone automatycznie po 6s przez widget.
+final lastScannedItemIdProvider = StateProvider<String?>((ref) => null);
+
 final currentItemsProvider = StreamProvider<List<ItemModel>>((ref) {
   final storage = ref.watch(currentStorageProvider);
   if (storage == null) return Stream.value([]);
