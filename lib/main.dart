@@ -13,6 +13,7 @@ import 'features/inventory/data/item_repository.dart';
 import 'features/inventory/models/item_model.dart';
 import 'features/inventory/models/storage_model.dart';
 import 'features/inventory/presentation/item_card.dart';
+import 'features/auth/presentation/login_screen.dart';
 
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform => const FirebaseOptions(
@@ -53,7 +54,7 @@ class IteMYApp extends ConsumerWidget {
         brightness: Brightness.light,
       ),
       home: authState.when(
-        data: (user) => user == null ? const LoadingScreen() : const HomeScreen(),
+        data: (user) => user == null ? const LoginScreen() : const HomeScreen(),
         loading: () => const LoadingScreen(),
         error: (e, s) => Scaffold(body: Center(child: Text('Błąd Auth: $e'))),
       ),
@@ -90,6 +91,9 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
+// Wszystkie metody pomocnicze używają this.context i this.ref bezpośrednio —
+// nie przyjmują BuildContext/WidgetRef jako parametrów, co eliminuje
+// use_build_context_synchronously po await.
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
 
@@ -97,7 +101,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _disableWakelock() { /* WakelockPlus.disable(); */ }
 
   // ── Snackbar z Undo (4s) ──────────────────────────────────────────────────
-  void _showUndoSnackBar(BuildContext context, String message,
+  void _showUndoSnackBar(String message,
       {required Future<void> Function() onUndo}) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -108,12 +112,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ));
   }
 
-  // ── Symulacja skanera (placeholder) ──────────────────────────────────────
-  Future<String?> _simulateScan(BuildContext context) async {
+  // ── Symulacja skanera (placeholder — podmienić na mobile_scanner) ─────────
+  Future<String?> _simulateScan() async {
     String? result;
     await showDialog(
       context: context,
-      builder: (context) {
+      builder: (ctx) {
         final c = TextEditingController();
         return AlertDialog(
           title: const Text('Skaner'),
@@ -121,9 +125,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               decoration: const InputDecoration(hintText: 'Wpisz EAN...'),
               keyboardType: TextInputType.number),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Anuluj')),
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Anuluj')),
             ElevatedButton(
-              onPressed: () { result = c.text; Navigator.pop(context); },
+              onPressed: () { result = c.text; Navigator.pop(ctx); },
               child: const Text('OK'),
             ),
           ],
@@ -142,21 +146,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _enableWakelock();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final storage = ref.read(currentStorageProvider);
-      if (storage != null && mounted) _inventoryScan(context, storage.id);
+      if (storage != null && mounted) _inventoryScan(storage.id);
     });
   }
 
-  void _stopInventoryMode(BuildContext context) {
+  void _stopInventoryMode() {
     final session = ref.read(inventorySessionProvider);
     _disableWakelock();
     ref.read(inventorySessionProvider.notifier).stop();
-    if (session.changes.isNotEmpty) _showInventorySummary(context, session);
+    if (session.changes.isNotEmpty) _showInventorySummary(session);
   }
 
-  Future<void> _inventoryScan(BuildContext context, String storageId) async {
+  Future<void> _inventoryScan(String storageId) async {
     if (!ref.read(inventorySessionProvider).isActive) return;
 
-    final ean = await _simulateScan(context);
+    final ean = await _simulateScan();
     if (!mounted) return;
     if (ean == null || ean.isEmpty) return;
 
@@ -164,19 +168,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final existing = items.where((i) => i.ean == ean).toList();
 
     if (existing.isNotEmpty) {
-      await _showInventoryQuickActionSheet(context, storageId, existing.first);
+      await _showInventoryQuickActionSheet(storageId, existing.first);
     } else {
-      await _showInventoryAddSheet(context, storageId, ean: ean);
+      await _showInventoryAddSheet(storageId, ean: ean);
     }
 
     if (!mounted) return;
     if (ref.read(inventorySessionProvider).isActive) {
-      _inventoryScan(context, storageId);
+      _inventoryScan(storageId);
     }
   }
 
   Future<void> _showInventoryQuickActionSheet(
-      BuildContext context, String storageId, ItemModel item) async {
+      String storageId, ItemModel item) async {
     double localQty  = item.quantity;
     double qtyAtOpen = item.quantity;
 
@@ -190,7 +194,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => SafeArea(
+        builder: (ctx, setS) => SafeArea(
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -200,8 +204,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 margin: const EdgeInsets.only(bottom: 12),
                 decoration: BoxDecoration(
-                  color: Colors.green[50],
-                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.green[50], borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: Colors.green.shade200),
                 ),
                 child: Row(children: [
@@ -216,25 +219,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               // ── Nagłówek produktu ─────────────────────────────────
               Row(children: [
                 if (item.imageUrl != null && item.imageUrl!.isNotEmpty)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.network(item.imageUrl!,
-                        width: 48, height: 48, fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) =>
-                            const Icon(Icons.inventory_2, size: 40)),
-                  )
+                  ClipRRect(borderRadius: BorderRadius.circular(8),
+                    child: Image.network(item.imageUrl!, width: 48, height: 48,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(Icons.inventory_2, size: 40)))
                 else
                   const Icon(Icons.inventory_2, size: 40, color: Colors.grey),
                 const SizedBox(width: 12),
-                Expanded(child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(item.name, overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                    if (item.ean != null && item.ean!.isNotEmpty)
-                      Text(item.ean!, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                  ],
-                )),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(item.name, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  if (item.ean != null && item.ean!.isNotEmpty)
+                    Text(item.ean!, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                ])),
               ]),
 
               const SizedBox(height: 24),
@@ -248,16 +245,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     customBorder: const CircleBorder(),
                     onTap: () {
                       if (localQty > 0) {
-                        setState(() => localQty -= 1);
+                        setS(() => localQty -= 1);
                         ref.read(itemRepositoryProvider).updateQuantity(storageId, item.id, -1);
                       }
                     },
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
+                    child: Padding(padding: const EdgeInsets.all(14),
                       child: Icon(Icons.remove,
-                          color: localQty <= 0 ? Colors.red[300] : Colors.black87,
-                          size: 28),
-                    ),
+                          color: localQty <= 0 ? Colors.red[300] : Colors.black87, size: 28)),
                   ),
                 ),
                 const SizedBox(width: 28),
@@ -268,18 +262,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ]),
                 const SizedBox(width: 28),
                 Material(
-                  color: Colors.blue[50],
-                  shape: const CircleBorder(),
+                  color: Colors.blue[50], shape: const CircleBorder(),
                   child: InkWell(
                     customBorder: const CircleBorder(),
                     onTap: () {
-                      setState(() => localQty += 1);
+                      setS(() => localQty += 1);
                       ref.read(itemRepositoryProvider).updateQuantity(storageId, item.id, 1);
                     },
-                    child: const Padding(
-                      padding: EdgeInsets.all(14),
-                      child: Icon(Icons.add, color: Colors.blue, size: 28),
-                    ),
+                    child: const Padding(padding: EdgeInsets.all(14),
+                      child: Icon(Icons.add, color: Colors.blue, size: 28)),
                   ),
                 ),
               ]),
@@ -294,7 +285,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   leading: const Icon(Icons.warehouse_outlined, color: Colors.blue),
                   title: const Text('Przenieś do magazynu'),
                   trailing: Icon(moveExpanded ? Icons.expand_less : Icons.expand_more),
-                  onTap: () => setState(() => moveExpanded = !moveExpanded),
+                  onTap: () => setS(() => moveExpanded = !moveExpanded),
                 ),
                 if (moveExpanded)
                   ...otherStorages.map((target) => ListTile(
@@ -304,7 +295,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     title: Text(target.name),
                     onTap: () async {
                       Navigator.pop(ctx);
-                      await _moveItemWithUndo(ref, context, storageId, target.id, target.name, item);
+                      await _moveItemWithUndo(storageId, target.id, target.name, item);
+                      if (!mounted) return;
                       ref.read(inventorySessionProvider.notifier).recordChange(InventoryChange(
                         itemName: item.name, quantityBefore: qtyAtOpen,
                         quantityAfter: localQty, unit: item.unit,
@@ -332,7 +324,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         itemName: item.name, quantityBefore: qtyAtOpen,
                         quantityAfter: localQty, unit: item.unit,
                       ));
-                      _showUndoSnackBar(context,
+                      _showUndoSnackBar(
                         '${item.name}: ${qtyAtOpen.toStringAsFixed(qtyAtOpen % 1 == 0 ? 0 : 1)} → ${localQty.toStringAsFixed(localQty % 1 == 0 ? 0 : 1)} ${item.unit}',
                         onUndo: () async => ref.read(itemRepositoryProvider)
                             .updateQuantity(storageId, item.id, -delta),
@@ -349,13 +341,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
     ).whenComplete(() {
       ref.read(lastScannedItemIdProvider.notifier).update((_) => null);
-      Future.delayed(Duration.zero, () =>
-          ref.read(lastScannedItemIdProvider.notifier).update((_) => item.id));
+      Future.delayed(Duration.zero, () {
+        if (mounted) ref.read(lastScannedItemIdProvider.notifier).update((_) => item.id);
+      });
     });
   }
 
-  Future<void> _showInventoryAddSheet(BuildContext context, String storageId,
-      {String? ean}) async {
+  Future<void> _showInventoryAddSheet(String storageId, {String? ean}) async {
     final nameController = TextEditingController();
     final eanController  = TextEditingController(text: ean);
     final descController = TextEditingController();
@@ -368,14 +360,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
           child: DraggableScrollableSheet(
             initialChildSize: 0.85, maxChildSize: 0.95, expand: false,
-            builder: (context, sc) => SingleChildScrollView(
-              controller: sc,
-              padding: const EdgeInsets.all(20),
+            builder: (ctx, sc) => SingleChildScrollView(
+              controller: sc, padding: const EdgeInsets.all(20),
               child: Column(children: [
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -409,7 +400,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     decoration: const InputDecoration(labelText: 'Jedn.', border: OutlineInputBorder()),
                     items: ['szt', 'kpl', 'g', 'kg', 'm', 'cm', 'm2', 'm3']
                         .map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
-                    onChanged: (v) => setState(() => selectedUnit = v!),
+                    onChanged: (v) => setS(() => selectedUnit = v!),
                   )),
                 ]),
                 const SizedBox(height: 12),
@@ -418,14 +409,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 const SizedBox(height: 12),
                 TextField(controller: urlController,
                     decoration: const InputDecoration(labelText: 'Link do zdjęcia', border: OutlineInputBorder()),
-                    onChanged: (v) => setState(() {})),
+                    onChanged: (v) => setS(() {})),
                 const SizedBox(height: 12),
                 TextField(controller: descController, maxLines: 2,
                     decoration: const InputDecoration(labelText: 'Opis', border: OutlineInputBorder())),
                 const SizedBox(height: 20),
                 Row(children: [
                   Expanded(child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () => Navigator.pop(ctx),
                     child: const Text('Pomiń'),
                   )),
                   const SizedBox(width: 12),
@@ -434,20 +425,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     onPressed: () {
                       if (nameController.text.isNotEmpty) {
                         final qty = double.tryParse(qtyController.text) ?? 1.0;
-                        final newItem = ItemModel(
+                        ref.read(itemRepositoryProvider).upsertItem(storageId, ItemModel(
                           id: '', name: nameController.text,
                           ean: eanController.text.isEmpty ? null : eanController.text,
                           quantity: qty, unit: selectedUnit,
                           description: descController.text,
                           imageUrl: urlController.text,
                           updatedAt: DateTime.now(),
-                        );
-                        ref.read(itemRepositoryProvider).upsertItem(storageId, newItem);
+                        ));
                         ref.read(inventorySessionProvider.notifier).recordChange(InventoryChange(
                           itemName: nameController.text, quantityBefore: 0,
                           quantityAfter: qty, unit: selectedUnit, isNew: true,
                         ));
-                        Navigator.pop(context);
+                        Navigator.pop(ctx);
                       }
                     },
                     child: const Text('Zapisz → Następny',
@@ -462,10 +452,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  void _showInventorySummary(BuildContext context, InventorySession session) {
+  void _showInventorySummary(InventorySession session) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Row(children: [
           Icon(Icons.inventory, color: Colors.green),
           SizedBox(width: 8),
@@ -491,7 +481,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   shrinkWrap: true,
                   itemCount: session.changes.length,
                   separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (context, i) {
+                  itemBuilder: (ctx, i) {
                     final c = session.changes[i];
                     return ListTile(
                       dense: true,
@@ -508,10 +498,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ]),
         ),
         actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Zamknij'),
-          ),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('Zamknij')),
         ],
       ),
     );
@@ -530,11 +517,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   );
 
   // ══════════════════════════════════════════════════════════════════════════
-  // NORMALNY TRYB — scan / add / move / delete
+  // NORMALNY TRYB
   // ══════════════════════════════════════════════════════════════════════════
 
-  void _showAddProductSheet(BuildContext context, WidgetRef ref,
-      String storageId, {String? ean}) {
+  void _showAddProductSheet(String storageId, {String? ean}) {
     final nameController = TextEditingController();
     final eanController  = TextEditingController(text: ean);
     final descController = TextEditingController();
@@ -546,12 +532,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       context: context, isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
           child: DraggableScrollableSheet(
             initialChildSize: 0.85, maxChildSize: 0.95, expand: false,
-            builder: (context, sc) => SingleChildScrollView(
+            builder: (ctx, sc) => SingleChildScrollView(
               controller: sc, padding: const EdgeInsets.all(20),
               child: Column(children: [
                 Container(
@@ -563,7 +549,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     child: urlController.text.isNotEmpty
                         ? Image.network(urlController.text, fit: BoxFit.contain,
                             errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 50),
-                            loadingBuilder: (ctx, child, prog) =>
+                            loadingBuilder: (c, child, prog) =>
                                 prog == null ? child : const Center(child: CircularProgressIndicator()))
                         : const Icon(Icons.image, size: 50, color: Colors.grey),
                   ),
@@ -585,7 +571,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     decoration: const InputDecoration(labelText: 'Jedn.', border: OutlineInputBorder()),
                     items: ['szt', 'kpl', 'g', 'kg', 'm', 'cm', 'm2', 'm3']
                         .map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
-                    onChanged: (v) => setState(() => selectedUnit = v!),
+                    onChanged: (v) => setS(() => selectedUnit = v!),
                   )),
                 ]),
                 const SizedBox(height: 12),
@@ -595,8 +581,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   const SizedBox(width: 12),
                   Expanded(child: SizedBox(height: 56, child: ElevatedButton(
                     onPressed: () async {
-                      final s = await _simulateScan(context);
-                      if (s != null) { eanController.text = s; setState(() {}); }
+                      final s = await _simulateScan();
+                      if (s != null && mounted) { eanController.text = s; setS(() {}); }
                     },
                     child: const Icon(Icons.qr_code_scanner),
                   ))),
@@ -604,7 +590,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 const SizedBox(height: 12),
                 TextField(controller: urlController,
                     decoration: const InputDecoration(labelText: 'Link do zdjęcia', border: OutlineInputBorder()),
-                    onChanged: (v) => setState(() {})),
+                    onChanged: (v) => setS(() {})),
                 const SizedBox(height: 12),
                 TextField(controller: descController, maxLines: 2,
                     decoration: const InputDecoration(labelText: 'Opis', border: OutlineInputBorder())),
@@ -620,7 +606,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           unit: selectedUnit, description: descController.text,
                           imageUrl: urlController.text, updatedAt: DateTime.now(),
                         ));
-                        Navigator.pop(context);
+                        Navigator.pop(ctx);
                       }
                     },
                     child: const Text('Zapisz produkt'),
@@ -634,8 +620,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  void _showScanQuickActionSheet(BuildContext context, WidgetRef ref,
-      String storageId, ItemModel item) {
+  void _showScanQuickActionSheet(String storageId, ItemModel item) {
     double localQty  = item.quantity;
     double qtyAtOpen = item.quantity;
     final storages      = ref.read(userStoragesProvider).value ?? [];
@@ -646,7 +631,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => SafeArea(
+        builder: (ctx, setS) => SafeArea(
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -675,9 +660,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     onTap: () {
                       if (localQty <= 0) {
                         Navigator.pop(ctx);
-                        _confirmDeleteFromScan(context, ref, storageId, item);
+                        _confirmDeleteFromScan(storageId, item);
                       } else {
-                        setState(() => localQty -= 1);
+                        setS(() => localQty -= 1);
                         ref.read(itemRepositoryProvider).updateQuantity(storageId, item.id, -1);
                       }
                     },
@@ -698,7 +683,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   child: InkWell(
                     customBorder: const CircleBorder(),
                     onTap: () {
-                      setState(() => localQty += 1);
+                      setS(() => localQty += 1);
                       ref.read(itemRepositoryProvider).updateQuantity(storageId, item.id, 1);
                     },
                     child: const Padding(padding: EdgeInsets.all(14),
@@ -712,7 +697,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 dense: true,
                 leading: const Icon(Icons.delete_outline, color: Colors.red),
                 title: const Text('Usuń produkt', style: TextStyle(color: Colors.red)),
-                onTap: () { Navigator.pop(ctx); _confirmDeleteFromScan(context, ref, storageId, item); },
+                onTap: () { Navigator.pop(ctx); _confirmDeleteFromScan(storageId, item); },
               ),
               if (otherStorages.isNotEmpty) ...[
                 const Divider(height: 1),
@@ -720,7 +705,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
                   child: Align(alignment: Alignment.centerLeft,
                     child: Text('Przenieś do magazynu',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w600))),
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600],
+                            fontWeight: FontWeight.w600))),
                 ),
                 ...otherStorages.map((target) => ListTile(
                   dense: true,
@@ -728,7 +714,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   title: Text(target.name),
                   onTap: () {
                     Navigator.pop(ctx);
-                    _moveItemWithUndo(ref, context, storageId, target.id, target.name, item);
+                    _moveItemWithUndo(storageId, target.id, target.name, item);
                   },
                 )),
               ],
@@ -739,7 +725,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     Navigator.pop(ctx);
                     final delta = localQty - qtyAtOpen;
                     if (delta != 0) {
-                      _showUndoSnackBar(context,
+                      _showUndoSnackBar(
                         '${item.name}: ${qtyAtOpen.toStringAsFixed(qtyAtOpen % 1 == 0 ? 0 : 1)} → ${localQty.toStringAsFixed(localQty % 1 == 0 ? 0 : 1)} ${item.unit}',
                         onUndo: () async => ref.read(itemRepositoryProvider)
                             .updateQuantity(storageId, item.id, -delta),
@@ -755,26 +741,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
     ).whenComplete(() {
       ref.read(lastScannedItemIdProvider.notifier).update((_) => null);
-      Future.delayed(Duration.zero, () =>
-          ref.read(lastScannedItemIdProvider.notifier).update((_) => item.id));
+      Future.delayed(Duration.zero, () {
+        if (mounted) ref.read(lastScannedItemIdProvider.notifier).update((_) => item.id);
+      });
     });
   }
 
-  void _confirmDeleteFromScan(BuildContext context, WidgetRef ref,
-      String storageId, ItemModel item) {
+  void _confirmDeleteFromScan(String storageId, ItemModel item) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('Usuń produkt'),
         content: Text('Czy na pewno chcesz usunąć "${item.name}"?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Anuluj')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Anuluj')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(ctx);
               ref.read(itemRepositoryProvider).deleteItem(storageId, item.id);
-              _showUndoSnackBar(context, '${item.name} usunięty',
+              _showUndoSnackBar('${item.name} usunięty',
                   onUndo: () async =>
                       ref.read(itemRepositoryProvider).upsertItem(storageId, item));
             },
@@ -785,7 +771,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Future<void> _moveItemWithUndo(WidgetRef ref, BuildContext context,
+  Future<void> _moveItemWithUndo(
       String fromId, String toId, String toName, ItemModel item) async {
     final repo  = ref.read(itemRepositoryProvider);
     final newId = await repo.upsertItem(toId, ItemModel(
@@ -794,36 +780,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       imageUrl: item.imageUrl, updatedAt: DateTime.now(),
     ));
     await repo.deleteItem(fromId, item.id);
-    if (!context.mounted) return;
-    _showUndoSnackBar(context, '${item.name} → $toName',
+    if (!mounted) return;
+    _showUndoSnackBar('${item.name} → $toName',
         onUndo: () async {
           await repo.deleteItem(toId, newId);
           await repo.upsertItem(fromId, item);
         });
   }
 
-  void _showScanDialog(BuildContext context, WidgetRef ref, String storageId) {
+  void _showScanDialog(String storageId) {
     final eanController = TextEditingController();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('Skanowanie kodu EAN'),
         content: TextField(controller: eanController, keyboardType: TextInputType.number,
             autofocus: true,
             decoration: const InputDecoration(hintText: 'Wpisz lub wklej kod')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Anuluj')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Anuluj')),
           ElevatedButton(
             onPressed: () {
               final ean = eanController.text.trim();
               if (ean.isNotEmpty) {
-                Navigator.pop(context);
+                Navigator.pop(ctx);
                 final items    = ref.read(currentItemsProvider).value ?? [];
                 final existing = items.where((i) => i.ean == ean).toList();
                 if (existing.isNotEmpty) {
-                  _showScanQuickActionSheet(context, ref, storageId, existing.first);
+                  _showScanQuickActionSheet(storageId, existing.first);
                 } else {
-                  _showAddProductSheet(context, ref, storageId, ean: ean);
+                  _showAddProductSheet(storageId, ean: ean);
                 }
               }
             },
@@ -882,7 +868,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
         actions: inventoryMode
             ? [TextButton.icon(
-                onPressed: () => _stopInventoryMode(context),
+                onPressed: _stopInventoryMode,
                 icon: const Icon(Icons.stop_circle_outlined, color: Colors.white),
                 label: const Text('Zakończ', style: TextStyle(color: Colors.white)),
               )]
@@ -903,6 +889,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   onPressed: () => ref.read(itemSortProvider.notifier)
                       .update((_) => sortConfig.copyWith(ascending: !sortConfig.ascending)),
                 ),
+                IconButton(
+                  icon: const Icon(Icons.logout),
+                  tooltip: 'Wyloguj',
+                  onPressed: () => ref.read(authControllerProvider).signOut(),
+                ),
               ],
       ),
       drawer: inventoryMode ? null : const StorageDrawer(),
@@ -919,7 +910,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           : const ItemListWidget(),
 
       floatingActionButton: storage == null ? null : inventoryMode
-          // ── Pasek inwentaryzacji ────────────────────────────────────────
           ? Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
@@ -937,7 +927,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ]),
                   ),
                   FloatingActionButton.extended(
-                    onPressed: () => _inventoryScan(context, storage.id),
+                    onPressed: () => _inventoryScan(storage.id),
                     heroTag: 'inv_scan',
                     backgroundColor: Colors.green[700],
                     icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
@@ -946,16 +936,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ],
               ),
             )
-          // ── Normalny FAB ──────────────────────────────────────────────────
           : Row(mainAxisAlignment: MainAxisAlignment.end, children: [
               FloatingActionButton(
-                onPressed: () => _showAddProductSheet(context, ref, storage.id),
-                heroTag: 'add',
-                child: const Icon(Icons.add),
+                onPressed: () => _showAddProductSheet(storage.id),
+                heroTag: 'add', child: const Icon(Icons.add),
               ),
               const SizedBox(width: 12),
               FloatingActionButton.extended(
-                onPressed: () => _showScanDialog(context, ref, storage.id),
+                onPressed: () => _showScanDialog(storage.id),
                 heroTag: 'scan',
                 label: const Text('Skanuj'),
                 icon: const Icon(Icons.qr_code_scanner),
@@ -985,12 +973,12 @@ class StorageDrawer extends ConsumerWidget {
     final user       = ref.read(authStateProvider).value;
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: Text(existing == null ? 'Nowy magazyn' : 'Zmień nazwę'),
         content: TextField(controller: controller,
             decoration: const InputDecoration(labelText: 'Nazwa magazynu'), autofocus: true),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Anuluj')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Anuluj')),
           ElevatedButton(
             onPressed: () {
               if (controller.text.isNotEmpty && user != null) {
@@ -999,7 +987,7 @@ class StorageDrawer extends ConsumerWidget {
                 } else {
                   ref.read(storageRepositoryProvider).renameStorage(existing.id, controller.text);
                 }
-                Navigator.pop(context);
+                Navigator.pop(ctx);
               }
             },
             child: const Text('Zapisz'),
@@ -1012,17 +1000,17 @@ class StorageDrawer extends ConsumerWidget {
   void _confirmDeleteStorage(BuildContext context, WidgetRef ref, StorageModel storage) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('Usuń magazyn'),
         content: Text('Usunięcie magazynu "${storage.name}" jest nieodwracalne.\n\n'
             'Produkty w magazynie NIE zostaną usunięte z bazy — '
             'tylko powiązanie magazynu zostanie usunięte.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Anuluj')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Anuluj')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(ctx);
               ref.read(storageRepositoryProvider).deleteStorage(storage.id);
             },
             child: const Text('Usuń magazyn', style: TextStyle(color: Colors.white)),

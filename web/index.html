@@ -1,19 +1,6 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
@@ -31,22 +18,14 @@
 
   <title>itemy_app</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- Google Sign-In -->
+  <meta name="google-signin-client_id"
+        content="384317417835-4ng5mq2kfltau00lgree1g3l9mu5287h.apps.googleusercontent.com">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
-  <script src="https://www.gstatic.com/firebasejs/8.6.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.6.1/firebase-auth.js"></script>
-  <script>
-    var firebaseConfig = {
-      apiKey: "AIzaSyD3tENo2M1yrpxbLeIta8UwrNY-FnxD8qw",
-      authDomain: "itemy-63118.firebaseapp.com",
-      projectId: "itemy-63118",
-      storageBucket: "itemy-63118.firebasestorage.app",
-      messagingSenderId: "776937770544",
-      appId: "1:776937770544:web:a4986495b7f75e5956a7f5"
-    };
-    // Initialize Firebase
-    firebase.initializeApp(firebaseConfig);
-  </script>
+  <!-- Firebase jest inicjalizowany przez FlutterFire w Dart — nie duplikujemy tutaj -->
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
