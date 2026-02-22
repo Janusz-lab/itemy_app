@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/firebase_providers.dart';
 import '../data/auth_repository.dart';
@@ -21,10 +22,15 @@ class AuthController {
   final AuthRepository _repo;
   AuthController(this._repo);
 
-  /// Przy starcie — jeśli nikt nie jest zalogowany, NIE logujemy anonimowo.
-  /// Użytkownik musi się zalogować przez ekran logowania.
+  /// Przy starcie — jeśli nikt nie jest zalogowany, logujemy anonimowo (tryb lokalny).
   Future<void> initializeAuth() async {
-    // Nic nie robimy — czekamy aż użytkownik się zaloguje
+    try {
+      if (_repo.currentUser == null) {
+        await _repo.signInAnonymously();
+      }
+    } catch (e) {
+      debugPrint("Auth Error: $e");
+    }
   }
 
   Future<void> signOut() => _repo.signOut();

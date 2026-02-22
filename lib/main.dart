@@ -13,7 +13,7 @@ import 'features/inventory/data/item_repository.dart';
 import 'features/inventory/models/item_model.dart';
 import 'features/inventory/models/storage_model.dart';
 import 'features/inventory/presentation/item_card.dart';
-import 'features/auth/presentation/login_screen.dart';
+import 'features/auth/presentation/settings_screen.dart';
 
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform => const FirebaseOptions(
@@ -54,7 +54,7 @@ class IteMYApp extends ConsumerWidget {
         brightness: Brightness.light,
       ),
       home: authState.when(
-        data: (user) => user == null ? const LoginScreen() : const HomeScreen(),
+        data: (user) => const HomeScreen(),
         loading: () => const LoadingScreen(),
         error: (e, s) => Scaffold(body: Center(child: Text('Błąd Auth: $e'))),
       ),
@@ -890,9 +890,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       .update((_) => sortConfig.copyWith(ascending: !sortConfig.ascending)),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.logout),
-                  tooltip: 'Wyloguj',
-                  onPressed: () => ref.read(authControllerProvider).signOut(),
+                  icon: const Icon(Icons.settings),
+                  tooltip: 'Ustawienia',
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  ),
                 ),
               ],
       ),

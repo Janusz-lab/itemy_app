@@ -14,6 +14,8 @@ class AuthRepository {
   Stream<User?> get authStateChanges => _auth.authStateChanges();
   User? get currentUser => _auth.currentUser;
 
+  Future<UserCredential> signInAnonymously() => _auth.signInAnonymously();
+
   // ── Google Sign-In ────────────────────────────────────────────────────────
   Future<UserCredential?> signInWithGoogle() async {
     final googleUser = await _googleSignIn.signIn();
