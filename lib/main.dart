@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -14,6 +15,7 @@ import 'features/inventory/models/item_model.dart';
 import 'features/inventory/models/storage_model.dart';
 import 'features/inventory/presentation/item_card.dart';
 import 'features/auth/presentation/settings_screen.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform => const FirebaseOptions(
@@ -112,15 +114,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ));
   }
 
-  // ── Symulacja skanera (placeholder — podmienić na mobile_scanner) ─────────
+  // ── Skaner — kamera lub wpisywanie zależnie od platformy i ustawień ──────
   Future<String?> _simulateScan() async {
+    final cameraMode = ref.read(scannerModeProvider);
+    if (cameraMode && !kIsWeb) {
+      return await _scanWithCamera();
+    } else {
+      return await _scanWithText();
+    }
+  }
+
+  Future<String?> _scanWithText() async {
     String? result;
     await showDialog(
       context: context,
       builder: (ctx) {
         final c = TextEditingController();
         return AlertDialog(
-          title: const Text('Skaner'),
+          title: const Text('Wpisz kod EAN'),
           content: TextField(controller: c, autofocus: true,
               decoration: const InputDecoration(hintText: 'Wpisz EAN...'),
               keyboardType: TextInputType.number),
@@ -133,6 +144,68 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ],
         );
       },
+    );
+    return result;
+  }
+
+  Future<String?> _scanWithCamera() async {
+    String? result;
+    final controller = MobileScannerController();
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SizedBox(
+        height: MediaQuery.of(ctx).size.height * 0.65,
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 8, 8),
+            child: Row(children: [
+              const Icon(Icons.qr_code_scanner, color: Colors.blue),
+              const SizedBox(width: 10),
+              const Expanded(child: Text('Zeskanuj kod EAN',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+              IconButton(icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(ctx)),
+            ]),
+          ),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: MobileScanner(
+                controller: controller,
+                onDetect: (capture) {
+                  final barcode = capture.barcodes.firstOrNull;
+                  if (barcode?.rawValue != null) {
+                    result = barcode!.rawValue;
+                    controller.dispose();
+                    Navigator.pop(ctx);
+                  }
+                },
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.flash_on),
+                  tooltip: 'Latarka',
+                  onPressed: () => controller.toggleTorch(),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.flip_camera_android),
+                  tooltip: 'Obróć kamerę',
+                  onPressed: () => controller.switchCamera(),
+                ),
+              ],
+            ),
+          ),
+        ]),
+      ),
     );
     return result;
   }

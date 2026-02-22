@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/auth_provider.dart';
+import '../../../core/providers/app_providers.dart';
 import 'login_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -75,6 +77,27 @@ class SettingsScreen extends ConsumerWidget {
               onTap: () => _confirmSwitchToLocal(context, ref),
             ),
           ],
+
+          // ── Sekcja: Aplikacja ─────────────────────────────────────────────
+          const SizedBox(height: 8),
+          _SectionHeader('Skanowanie'),
+          Consumer(builder: (context, ref, _) {
+            final cameraMode = ref.watch(scannerModeProvider);
+            return SwitchListTile(
+              secondary: Icon(
+                cameraMode ? Icons.qr_code_scanner : Icons.keyboard,
+                color: (cameraMode && !kIsWeb) ? Colors.blue : Colors.grey,
+              ),
+              title: Text(cameraMode && !kIsWeb ? 'Skaner kamerowy' : 'Wpisywanie ręczne'),
+              subtitle: Text(kIsWeb
+                  ? 'Skaner kamerowy dostępny tylko na telefonie'
+                  : cameraMode
+                      ? 'Kamera skanuje kod EAN automatycznie'
+                      : 'Wpisujesz kod EAN z klawiatury'),
+              value: cameraMode,
+              onChanged: kIsWeb ? null : (_) => ref.read(scannerModeProvider.notifier).toggle(),
+            );
+          }),
 
           // ── Sekcja: Aplikacja ─────────────────────────────────────────────
           const SizedBox(height: 8),
